@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ISCR Active & Historical Research Permits</title>
+  
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Leaflet MarkerCluster CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <!-- PapaParse for Google Sheets CSV -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  
+  <style>
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #e2e8f0; }
+    #map { height: 100vh; width: 100vw; z-index: 1; }
+    
+    .sidebar {
+      position: absolute; top: 10px; right: 10px; z-index: 1000;
+      background: rgba(255, 255, 255, 0.95); padding: 20px;
+      border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      width: 320px; max-height: 90vh; overflow-y: auto;
+    }
+    .sidebar h3 { margin-top: 0; color: #0f172a; font-size: 18px; margin-bottom: 5px; }
+    .status-badge { font-size: 11px; color: #64748b; margin-bottom: 15px; display: block; font-weight: 600; }
+    
+    .filter-group { margin-bottom: 15px; }
+    .filter-group label { display: block; font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 5px; }
+    .filter-group select { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; font-family: inherit; }
+    
+    .status-toggles { display: flex; gap: 10px; margin-bottom: 15px; }
+    .toggle-btn { flex: 1; padding: 8px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; transition: 0.2s; }
+    .btn-active-state { background: #0ea5e9; color: white; }
+    .btn-inactive-state { background: #cbd5e1; color: #475569; }
+    
+    .popup-permit { margin: 0 0 3px 0; font-size: 11px; font-weight: 700; color: #0284c7; text-transform: uppercase; letter-spacing: 0.4px; }
+    .popup-title { margin: 0 0 6px 0; color: #0f172a; font-size: 14px; line-height: 1.3; }
+    .popup-detail { margin: 4px 0; font-size: 12px; color: #475569; }
+    .tag { display: inline-block; padding: 3px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; color: white; margin-top: 6px; }
+    .tag-active { background: #10b981; }
+    .tag-inactive { background: #64748b; }
+
+    /* Custom CSS Pin Styling */
+    .custom-pin {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 4px rgba(0,0,0,0.4);
+    }
+    .pin-active { background-color: #0ea5e9; }
+    .pin-inactive { background-color: #64748b; }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <div class="sidebar">
+    <h3>ISCR Permit Tracker</h3>
+    <span class="status-badge" id="statusMsg">Loading Google Sheet data...</span>
+    
+    <div class="status-toggles">
+      <button class="toggle-btn btn-active-state" id="btnActive">Active Projects</button>
+      <button class="toggle-btn btn-active-state" id="btnInactive">Past Research</button>
+    </div>
+
+    <div class="filter-group">
+      <label>Research Category:</label>
+      <select id="categoryFilter">
+        <option value="ALL">All Categories</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label>Research Year:</label>
+      <select id="yearFilter">
+        <option value="ALL">All Years (2023-2026)</option>
+        <option value="2026">2026</option>
+        <option value="2025">2025</option>
+        <option value="2024">2024</option>
+        <option value="2023">2023</option>
+      </select>
+    </div>
+  </div>
+
+  <script>
+    // 1. Initialize Map restricted specifically to Belize
+    const belizeBounds = [
+      [15.70, -89.35], 
+      [18.55, -87.40]  
+    ];
+
+    const map = L.map('map', {
+      center: [17.1899, -88.4976],
+      zoom: 8,
+      minZoom: 8, 
+      maxBounds: belizeBounds, 
+      maxBoundsViscosity: 1.0  
+    });
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors | ISCR-NICH'
+    }).addTo(map);
+
+    // 2. Load Belize District boundaries
+    fetch('https://raw.githubusercontent.com/wmgeolab/geoBoundaries/main/releaseData/gbOpen/BLZ/ADM1/geoBoundaries-BLZ-ADM1_simplified.geojson')
+      .then(response => response.json())
+      .then(data => {
+        L.geoJSON(data, {
+          style: { color: "#334155", weight: 2, fillOpacity: 0.05 }
+        }).addTo(map);
+      })
+      .catch(err => console.log("District boundaries note: ", err));
+
+    // 3. Initialize Marker Cluster Group
+    let markers = L.markerClusterGroup({
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      zoomToBoundsOnClick: true
+    });
+    map.addLayer(markers);
+
+    let allData = [];
+    
+    // ====================================================================
+    // PASTE YOUR PUBLISHED GOOGLE SHEETS CSV LINK EXACTLY BETWEEN THE QUOTES BELOW
+    // ====================================================================
+    const googleSheetCSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEEJmPxsn6MWwCDvHDnUqK7z5LnFB9zgzqJkiahpfEaZlsDxXFkat2b-soxLtWaxsUXhGdIMmh9Hwl/pub?output=csv";
+    // ====================================================================
+
+    // State toggles (Both Active & Past active by default)
+    let showActive = true;
+    let showInactive = true; 
+
+    document.getElementById('btnActive').addEventListener('click', () => {
+      showActive = !showActive;
+      document.getElementById('btnActive').className = showActive ? 'toggle-btn btn-active-state' : 'toggle-btn btn-inactive-state';
+      renderMap();
+    });
+
+    document.getElementById('btnInactive').addEventListener('click', () => {
+      showInactive = !showInactive;
+      document.getElementById('btnInactive').className = showInactive ? 'toggle-btn btn-active-state' : 'toggle-btn btn-inactive-state';
+      renderMap();
+    });
+
+    // Flexible column reader function
+    function getVal(row, possibleKeys) {
+      const rowKeys = Object.keys(row);
+      for (let key of possibleKeys) {
+        const matched = rowKeys.find(k => k.trim().toLowerCase() === key.toLowerCase());
+        if (matched && row[matched] !== undefined && row[matched] !== null) {
+          return String(row[matched]).trim();
+        }
+      }
+      return '';
+    }
+
+    // Custom Map Marker Icons
+    const activeIcon = L.divIcon({
+      className: 'custom-pin pin-active',
+      iconSize: [16, 16],
+      iconAnchor: [8, 8]
+    });
+
+    const inactiveIcon = L.divIcon({
+      className: 'custom-pin pin-inactive',
+      iconSize: [16, 16],
+      iconAnchor: [8, 8]
+    });
+
+    // Fetch and parse CSV
+    if (googleSheetCSV !== "YOUR_PUBLISHED_CSV_LINK_HERE") {
+      Papa.parse(googleSheetCSV, {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          allData = results.data;
+          document.getElementById('statusMsg').innerText = `Loaded ${allData.length} total permits`;
+          populateCategoryDropdown();
+          renderMap();
+        },
+        error: function(err) {
+          console.error("CSV Error:", err);
+          document.getElementById('statusMsg').innerText = "Error loading sheet. Check published link.";
+        }
+      });
+    } else {
+      document.getElementById('statusMsg').innerText = "Please insert your Google Sheet CSV URL.";
+    }
+
+    function populateCategoryDropdown() {
+      const categorySet = new Set();
+      allData.forEach(row => {
+        const cat = getVal(row, ['Research Category', 'Category']);
+        if (cat) categorySet.add(cat);
+      });
+      
+      const categoryFilter = document.getElementById('categoryFilter');
+      Array.from(categorySet).sort().forEach(category => {
+        const option = document.createElement('option');
+        option.value = category;
+        option.textContent = category;
+        categoryFilter.appendChild(option);
+      });
+    }
+
+    function renderMap() {
+      markers.clearLayers();
+      
+      const selCategory = document.getElementById('categoryFilter').value;
+      const selYear = document.getElementById('yearFilter').value;
+
+      allData.forEach(row => {
+        const permitNo = getVal(row, ['Permit No.', 'Permit No']);
+        const lat = getVal(row, ['Latitude', 'Lat']);
+        const lng = getVal(row, ['Longitude', 'Lng', 'Long']);
+        const status = getVal(row, ['Status']);
+        const pi = getVal(row, ['Lead P.I.', 'PI', 'Principal Investigator']);
+        const coPi = getVal(row, ['Co-P.I.', 'Co-PI', 'Co-Principal Investigator']);
+        const inst = getVal(row, ['Institution']);
+        const cat = getVal(row, ['Research Category', 'Category']);
+        const loc = getVal(row, ['Specific Village/Location', 'Location']);
+        const year = getVal(row, ['Start Year', 'Year']);
+        const summary = getVal(row, ['Focus Summary', 'Title', 'Research Title']);
+
+        if(!lat || !lng || isNaN(parseFloat(lat)) || isNaN(parseFloat(lng))) return;
+
+        const isRowActive = status.toLowerCase() === 'active';
+        const isRowInactive = status.toLowerCase() === 'inactive';
+        
+        if (isRowActive && !showActive) return;
+        if (isRowInactive && !showInactive) return;
+
+        if (selCategory !== 'ALL' && cat !== selCategory) return;
+        if (selYear !== 'ALL' && year !== selYear) return;
+
+        const permitHeader = permitNo ? `<p class="popup-permit">${permitNo}</p>` : '';
+        const coPiLine = coPi ? `<p class="popup-detail"><b>Co-P.I.:</b> ${coPi}</p>` : '';
+
+        const popupContent = `
+          ${permitHeader}
+          <h4 class="popup-title">${summary || 'Research Project'}</h4>
+          <p class="popup-detail"><b>Lead P.I.:</b> ${pi || 'Unknown'} (${inst || 'N/A'})</p>
+          ${coPiLine}
+          <p class="popup-detail"><b>Category:</b> ${cat || 'N/A'}</p>
+          <p class="popup-detail"><b>Location:</b> ${loc || 'Belize'}</p>
+          <p class="popup-detail"><b>Year:</b> ${year || 'N/A'}</p>
+          <span class="tag ${isRowActive ? 'tag-active' : 'tag-inactive'}">${status || 'Unknown'}</span>
+        `;
+
+        const marker = L.marker([parseFloat(lat), parseFloat(lng)], {
+          icon: isRowActive ? activeIcon : inactiveIcon
+        });
+
+        marker.bindPopup(popupContent);
+        markers.addLayer(marker);
+      });
+    }
+
+    document.getElementById('categoryFilter').addEventListener('change', renderMap);
+    document.getElementById('yearFilter').addEventListener('change', renderMap);
+  </script>
+</body>
+</html>
