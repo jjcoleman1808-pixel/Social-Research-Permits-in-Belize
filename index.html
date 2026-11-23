@@ -132,7 +132,7 @@
     // ====================================================================
     // PASTE YOUR PUBLISHED GOOGLE SHEETS CSV LINK EXACTLY BETWEEN THE QUOTES BELOW
     // ====================================================================
-    const googleSheetCSV = "YOUR_PUBLISHED_CSV_LINK_HERE";
+    const googleSheetCSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEEJmPxsn6MWwCDvHDnUqK7z5LnFB9zgzqJkiahpfEaZlsDxXFkat2b-soxLtWaxsUXhGdIMmh9Hwl/pub?output=csv";
     // ====================================================================
 
     // State toggles (Both Active & Past active by default; boundary lock ON by default)
@@ -192,7 +192,7 @@
     });
 
     // Fetch and parse CSV
-    if (googleSheetCSV !== "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEEJmPxsn6MWwCDvHDnUqK7z5LnFB9zgzqJkiahpfEaZlsDxXFkat2b-soxLtWaxsUXhGdIMmh9Hwl/pub?output=csv") {
+    if (googleSheetCSV !== "YOUR_PUBLISHED_CSV_LINK_HERE") {
       Papa.parse(googleSheetCSV, {
         download: true,
         header: true,
