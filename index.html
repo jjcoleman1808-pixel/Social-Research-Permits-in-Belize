@@ -33,8 +33,8 @@
     .filter-group label { display: block; font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 5px; }
     .filter-group select { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; box-sizing: border-box; font-family: inherit; }
     
-    .status-toggles { display: flex; gap: 10px; margin-bottom: 15px; }
-    .toggle-btn { flex: 1; padding: 8px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; transition: 0.2s; }
+    .status-toggles { display: flex; gap: 8px; margin-bottom: 15px; }
+    .toggle-btn { flex: 1; padding: 8px 6px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px; transition: 0.2s; }
     .btn-active-state { background: #0ea5e9; color: white; }
     .btn-inactive-state { background: #cbd5e1; color: #475569; }
     
@@ -66,8 +66,9 @@
     <span class="status-badge" id="statusMsg">Loading Google Sheet data...</span>
     
     <div class="status-toggles">
-      <button class="toggle-btn btn-active-state" id="btnActive">Active Projects</button>
-      <button class="toggle-btn btn-active-state" id="btnInactive">Past Research</button>
+      <button class="toggle-btn btn-active-state" id="btnActive">Active</button>
+      <button class="toggle-btn btn-active-state" id="btnInactive">Past</button>
+      <button class="toggle-btn btn-inactive-state" id="btnFreePan" title="Toggle Belize boundary lock">Bounds: ON</button>
     </div>
 
     <div class="filter-group">
@@ -90,18 +91,18 @@
   </div>
 
   <script>
-    // 1. Initialize Map restricted specifically to Belize
+    // 1. Initialize Map with wider buffer bounds, softer snap-back, and minZoom 7
     const belizeBounds = [
-      [15.70, -89.35], 
-      [18.55, -87.40]  
+      [15.20, -90.00],
+      [19.10, -86.80]
     ];
 
     const map = L.map('map', {
       center: [17.1899, -88.4976],
       zoom: 8,
-      minZoom: 8, 
-      maxBounds: belizeBounds, 
-      maxBoundsViscosity: 1.0  
+      minZoom: 7,
+      maxBounds: belizeBounds,
+      maxBoundsViscosity: 0.25
     });
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -131,12 +132,13 @@
     // ====================================================================
     // PASTE YOUR PUBLISHED GOOGLE SHEETS CSV LINK EXACTLY BETWEEN THE QUOTES BELOW
     // ====================================================================
-    const googleSheetCSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEEJmPxsn6MWwCDvHDnUqK7z5LnFB9zgzqJkiahpfEaZlsDxXFkat2b-soxLtWaxsUXhGdIMmh9Hwl/pub?output=csv";
+    const googleSheetCSV = "YOUR_PUBLISHED_CSV_LINK_HERE";
     // ====================================================================
 
-    // State toggles (Both Active & Past active by default)
+    // State toggles (Both Active & Past active by default; boundary lock ON by default)
     let showActive = true;
-    let showInactive = true; 
+    let showInactive = true;
+    let boundsLocked = true;
 
     document.getElementById('btnActive').addEventListener('click', () => {
       showActive = !showActive;
@@ -148,6 +150,20 @@
       showInactive = !showInactive;
       document.getElementById('btnInactive').className = showInactive ? 'toggle-btn btn-active-state' : 'toggle-btn btn-inactive-state';
       renderMap();
+    });
+
+    document.getElementById('btnFreePan').addEventListener('click', () => {
+      boundsLocked = !boundsLocked;
+      const btn = document.getElementById('btnFreePan');
+      if (boundsLocked) {
+        map.setMaxBounds(belizeBounds);
+        btn.innerText = 'Bounds: ON';
+        btn.className = 'toggle-btn btn-inactive-state';
+      } else {
+        map.setMaxBounds(null);
+        btn.innerText = 'Bounds: OFF';
+        btn.className = 'toggle-btn btn-active-state';
+      }
     });
 
     // Flexible column reader function
@@ -176,7 +192,7 @@
     });
 
     // Fetch and parse CSV
-    if (googleSheetCSV !== "YOUR_PUBLISHED_CSV_LINK_HERE") {
+    if (googleSheetCSV !== "https://docs.google.com/spreadsheets/d/e/2PACX-1vTEEJmPxsn6MWwCDvHDnUqK7z5LnFB9zgzqJkiahpfEaZlsDxXFkat2b-soxLtWaxsUXhGdIMmh9Hwl/pub?output=csv") {
       Papa.parse(googleSheetCSV, {
         download: true,
         header: true,
@@ -260,7 +276,12 @@
           icon: isRowActive ? activeIcon : inactiveIcon
         });
 
-        marker.bindPopup(popupContent);
+        marker.bindPopup(popupContent, {
+          autoPan: true,
+          autoPanPaddingTopLeft: [40, 120],
+          autoPanPaddingBottomRight: [340, 40],
+          maxWidth: 300
+        });
         markers.addLayer(marker);
       });
     }
